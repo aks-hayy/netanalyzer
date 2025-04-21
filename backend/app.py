@@ -9,8 +9,13 @@ import plotly.graph_objs as go
 import json
 from datetime import datetime
 import subprocess
+from scapy.all import sniff, IP, TCP, UDP
 
 app = Flask(__name__)
+packet_queue = []
+packet_buffer = []
+packet_buffer_lock = threading.Lock()
+MAX_PACKET_BUFFER = 100
 
 # Store network data history
 network_history = {
@@ -202,6 +207,107 @@ def generate_graph():
     )
     
     fig = go.Figure(data=[sent_trace, recv_trace], layout=layout)
+    
+    # Create the JSON representation of the graph
+    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+    return graphJSON
+
+
+
+def packet_capture_thread():
+    def packet_callback(packet):
+        if IP in packet:
+            with packet_buffer_lock:
+                # Format: timestamp, length, src, dst, protocol
+                packet_info = {
+                    'time': datetime.now().strftime('%H:%M:%S.%f')[:-3],
+                    'length': len(packet),
+                    'src': packet[IP].src,
+                    'dst': packet[IP].dst,
+                    'protocol': packet[IP].proto
+                }
+                
+                # Map IP protocol numbers to names
+                proto_map = {1: 'ICMP', 6: 'TCP', 17: 'UDP'}
+                packet_info['protocol'] = proto_map.get(packet_info['protocol'], 
+                                                       str(packet_info['protocol']))
+                
+                packet_buffer.append(packet_info)
+                
+                # Keep buffer size limited
+                if len(packet_buffer) > MAX_PACKET_BUFFER:
+                    packet_buffer.pop(0)
+    
+    try:
+        # Start capturing packets (timeout=1 means check for thread exit every 1 second)
+        sniff(prn=packet_callback, store=0, timeout=1)
+    except Exception as e:
+        print(f"Packet capture error: {e}")
+
+# Start packet capture in a separate thread
+capture_thread = threading.Thread(target=packet_capture_thread, daemon=True)
+capture_thread.start()
+
+
+
+@app.route('/generate_packet_graph')
+def generate_packet_graph():
+    with packet_buffer_lock:
+        # Get the latest packets from the buffer (up to 100)
+        packets = packet_buffer[-100:]
+    
+    # Extract data for each column
+    times = [p['time'] for p in packets]
+    #lengths = [p['length'] for p in packets]
+    #sources = [p['src'] for p in packets]
+    #destinations = [p['dst'] for p in packets]
+    #protocols = [p['protocol'] for p in packets]
+
+    tcp_packets = [p['length'] if p['protocol'] == 'TCP' else 0 for p in packets]
+    udp_packets = [p['length'] if p['protocol'] == 'UDP' else 0 for p in packets]
+    icmp_packets = [p['length'] if p['protocol'] == 'ICMP' else 0 for p in packets]
+    other_packets = [p['length'] if p['protocol'] not in ['TCP', 'UDP', 'ICMP'] else 0 for p in packets]
+    
+    # Create Plotly compatible data structure for packet data table
+    tcp_trace = go.Scatter(
+        x= times,
+        y=tcp_packets,
+        name='TCP Packets',
+        line=dict(color='#3498db', width=2)
+    )
+    
+
+    udp_trace = go.Scatter(
+            x=times,
+            y=udp_packets,
+        name='UDP Packets',
+        line=dict(color='#2ecc71', width=2)
+
+    )
+    
+    icmp_trace = go.Scatter(
+        x=times,
+        y=icmp_packets,
+        name='ICMP packets',
+        line=dict(color='#2ecf71', width=2)
+    )
+
+    other_trace = go.Scatter(
+        x =times,
+        y=other_packets,
+        name = 'Other packets',
+        line = dict(color = '#2ecf34',width = 2)
+    )
+
+    layout = go.Layout(
+        title='Packet Graph',
+        xaxis=dict(title='Time'),
+        yaxis=dict(title='Protocol'),
+        template='plotly_dark',
+        margin=dict(l=40, r=40, t=40, b=40),
+        height=300
+    )
+    fig = go.Figure(data=[tcp_trace,udp_trace,icmp_trace,other_trace], layout=layout)
     
     # Create the JSON representation of the graph
     graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
