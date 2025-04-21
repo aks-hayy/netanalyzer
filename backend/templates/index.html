@@ -1,0 +1,469 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Analyzer</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.16.1/plotly.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .dashboard-title {
+            font-weight: 700;
+            color: #2c3e50;
+        }
+        .card {
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-3px);
+        }
+        .card-header {
+            border-radius: 8px 8px 0 0;
+            background-color: #3273dc;
+            color: white;
+        }
+        .content-area {
+            padding: 20px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-active {
+            background-color: #23d160;
+        }
+        .status-inactive {
+            background-color: #ff3860;
+        }
+        .navbar {
+            background-color: #2c3e50;
+        }
+        .navbar-item {
+            color: white;
+        }
+        .navbar-brand a.navbar-item:hover {
+            background-color: #3c4e60;
+        }
+        .footer {
+            background-color: #2c3e50;
+            color: white;
+            padding: 1.5rem;
+        }
+        #networkGraph {
+            width: 100%;
+            height: 300px;
+        }
+        .table-container {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .tag {
+            margin-right: 5px;
+        }
+        .notification {
+            padding: 0.75rem;
+        }
+        .icon-text {
+            display: flex;
+            align-items: center;
+        }
+        .icon-text .icon {
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar" role="navigation" aria-label="main navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="/">
+                <i class="fas fa-network-wired fa-lg"></i>&nbsp;
+                <span class="has-text-weight-bold is-size-4">NetAnalyzer</span>
+            </a>
+        </div>
+        <div class="navbar-menu">
+            <div class="navbar-end">
+                <div class="navbar-item">
+                    <div class="buttons">
+                        <button class="button is-light" id="refreshBtn">
+                            <span class="icon">
+                                <i class="fas fa-sync-alt"></i>
+                            </span>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <section class="section">
+        <div class="container">
+            <h1 class="title dashboard-title">
+                <span class="icon-text">
+                    <span class="icon">
+                        <i class="fas fa-tachometer-alt"></i>
+                    </span>
+                    <span>Network Dashboard</span>
+                </span>
+            </h1>
+            
+            <!-- System Info -->
+            <div class="columns">
+                <div class="column is-12">
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <span class="icon">
+                                    <i class="fas fa-server"></i>
+                                </span>
+                                System Information
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <div class="content">
+                                <div class="columns">
+                                    <div class="column">
+                                        <p><strong>Hostname:</strong> {{ system_info.hostname }}</p>
+                                        <p><strong>Platform:</strong> {{ system_info.platform }}</p>
+                                    </div>
+                                    <div class="column">
+                                        <p><strong>CPU:</strong> {{ system_info.cpu_count }} cores ({{ system_info.cpu_percent }}% usage)</p>
+                                        <p><strong>Memory:</strong> {{ system_info.memory.used_percent }}% of {{ system_info.memory.total }}GB used</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Network Traffic Graph -->
+            <div class="columns">
+                <div class="column is-12">
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <span class="icon">
+                                    <i class="fas fa-chart-line"></i>
+                                </span>
+                                Network Traffic
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <div class="content">
+                                <div id="networkGraph"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Network Interfaces and Active Connections -->
+            <div class="columns">
+                <!-- Network Interfaces -->
+                <div class="column is-6">
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <span class="icon">
+                                    <i class="fas fa-ethernet"></i>
+                                </span>
+                                Network Interfaces
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <div class="content">
+                                <table class="table is-fullwidth is-striped is-hoverable">
+                                    <thead>
+                                        <tr>
+                                            <th>Interface</th>
+                                            <th>IP Address</th>
+                                            <th>MAC Address</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for iface, info in interfaces.items() %}
+                                        <tr>
+                                            <td>{{ iface }}</td>
+                                            <td>{{ info.ip }}</td>
+                                            <td>{{ info.mac }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Active Connections -->
+                <div class="column is-6">
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <span class="icon">
+                                    <i class="fas fa-plug"></i>
+                                </span>
+                                Active Connections
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <div class="content">
+                                <div class="table-container">
+                                    <table class="table is-fullwidth is-striped is-hoverable" id="connectionsTable">
+                                        <thead>
+                                            <tr>
+                                                <th>Local Address</th>
+                                                <th>Remote Address</th>
+                                                <th>Process</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <!-- Filled dynamically via JavaScript -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tools -->
+            <div class="columns">
+                <!-- Port Scanner -->
+                <div class="column is-6">
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <span class="icon">
+                                    <i class="fas fa-search"></i>
+                                </span>
+                                Port Scanner
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <div class="content">
+                                <form id="portScanForm">
+                                    <div class="field">
+                                        <label class="label">Target</label>
+                                        <div class="control">
+                                            <input class="input" type="text" name="target" placeholder="IP Address or Hostname" value="127.0.0.1">
+                                        </div>
+                                    </div>
+                                    <div class="field is-grouped">
+                                        <div class="control is-expanded">
+                                            <label class="label">Start Port</label>
+                                            <input class="input" type="number" name="start_port" value="1" min="1" max="65535">
+                                        </div>
+                                        <div class="control is-expanded">
+                                            <label class="label">End Port</label>
+                                            <input class="input" type="number" name="end_port" value="1024" min="1" max="65535">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <div class="control">
+                                            <button type="submit" class="button is-primary is-fullwidth">
+                                                <span class="icon">
+                                                    <i class="fas fa-search"></i>
+                                                </span>
+                                                <span>Scan Ports</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                                <div class="notification is-light" id="scanResults" style="display: none;">
+                                    <p class="has-text-weight-bold">Open Ports:</p>
+                                    <div id="openPortsList"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Ping Tool -->
+                <div class="column is-6">
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <span class="icon">
+                                    <i class="fas fa-satellite-dish"></i>
+                                </span>
+                                Ping Tool
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <div class="content">
+                                <form id="pingForm">
+                                    <div class="field">
+                                        <label class="label">Host</label>
+                                        <div class="control">
+                                            <input class="input" type="text" name="host" placeholder="IP Address or Hostname" value="8.8.8.8">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">Count</label>
+                                        <div class="control">
+                                            <input class="input" type="number" name="count" value="4" min="1" max="10">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <div class="control">
+                                            <button type="submit" class="button is-info is-fullwidth">
+                                                <span class="icon">
+                                                    <i class="fas fa-paper-plane"></i>
+                                                </span>
+                                                <span>Ping</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                                <div class="notification is-light" id="pingResults" style="display: none;">
+                                    <p class="has-text-weight-bold">Results:</p>
+                                    <pre id="pingOutput" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="content has-text-centered">
+            <p>
+                <strong>Network Analyzer</strong> by <a href="#" class="has-text-light">Your Name</a>
+                <br>
+                <small>Made with <i class="fas fa-heart"></i> using Python, Flask and Bulma</small>
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // Update network graph
+        function updateNetworkGraph() {
+            $.getJSON('/generate_graph', function(data) {
+                Plotly.react('networkGraph', data);
+            });
+        }
+
+        // Update active connections
+        function updateConnections() {
+            $.getJSON('/active_connections', function(data) {
+                const tbody = $('#connectionsTable tbody');
+                tbody.empty();
+                
+                data.forEach(function(conn) {
+                    tbody.append(`
+                        <tr>
+                            <td>${conn.local_address}</td>
+                            <td>${conn.remote_address}</td>
+                            <td>${conn.process} (${conn.pid})</td>
+                            <td><span class="tag is-primary">${conn.status}</span></td>
+                        </tr>
+                    `);
+                });
+                
+                if (data.length === 0) {
+                    tbody.append('<tr><td colspan="4" class="has-text-centered">No active connections</td></tr>');
+                }
+            });
+        }
+
+        // Port scan form submission
+        $('#portScanForm').submit(function(e) {
+            e.preventDefault();
+            const form = $(this);
+            const scanResults = $('#scanResults');
+            const openPortsList = $('#openPortsList');
+            
+            scanResults.hide();
+            form.find('button').addClass('is-loading');
+            
+            $.post('/port_scan', form.serialize(), function(data) {
+                form.find('button').removeClass('is-loading');
+                
+                if (data.length > 0) {
+                    openPortsList.empty();
+                    data.forEach(function(port) {
+                        openPortsList.append(`
+                            <div class="tag is-info is-medium">
+                                ${port.port} (${port.service})
+                            </div>
+                        `);
+                    });
+                    scanResults.show();
+                } else {
+                    openPortsList.html('<p>No open ports found</p>');
+                    scanResults.show();
+                }
+            });
+        });
+
+        // Ping form submission
+        $('#pingForm').submit(function(e) {
+            e.preventDefault();
+            const form = $(this);
+            const pingResults = $('#pingResults');
+            const pingOutput = $('#pingOutput');
+            
+            pingResults.hide();
+            form.find('button').addClass('is-loading');
+            
+            $.post('/ping', form.serialize(), function(data) {
+                form.find('button').removeClass('is-loading');
+                
+                if (data.success) {
+                    pingOutput.text(data.output);
+                    pingResults.show();
+                } else {
+                    pingOutput.text(`Error: ${data.error}`);
+                    pingResults.show();
+                }
+            });
+        });
+
+        // Refresh button
+        $('#refreshBtn').click(function() {
+            $(this).addClass('is-loading');
+            updateNetworkGraph();
+            updateConnections();
+            setTimeout(() => {
+                $(this).removeClass('is-loading');
+            }, 500);
+        });
+
+        // Initial updates
+        $(document).ready(function() {
+            updateNetworkGraph();
+            updateConnections();
+            
+            // Auto-refresh every 10 seconds
+            setInterval(function() {
+                updateNetworkGraph();
+                updateConnections();
+            }, 10000);
+        });
+    </script>
+</body>
+</html>
